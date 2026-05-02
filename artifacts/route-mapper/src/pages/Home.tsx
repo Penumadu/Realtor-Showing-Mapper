@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Plus, MapPin, Map, Navigation, Clock, Trash2, ArrowRight, Share2, MessageSquare, Copy, Check } from 'lucide-react';
+import { Plus, MapPin, Map, Navigation, Clock, Trash2, ArrowRight, Share2, MessageSquare, Mail, Copy, Check } from 'lucide-react';
 import MapView from '@/components/MapView';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 import type { OptimizedRoute } from '@workspace/api-client-react';
@@ -46,6 +46,7 @@ export default function Home() {
   const [shareId, setShareId] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState('');
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [copied, setCopied] = useState(false);
   const [loadingShare, setLoadingShare] = useState(false);
 
@@ -151,6 +152,21 @@ export default function Home() {
     }
     const msg = encodeURIComponent(`Hi! Here's your showing route: ${shareUrl}`);
     window.open(`sms:+${digits}?body=${msg}`, '_blank');
+  };
+
+  const handleSendEmail = () => {
+    if (!email.trim() || !email.includes('@')) {
+      toast({ title: "Invalid email", description: "Please enter a valid email address.", variant: "destructive" });
+      return;
+    }
+    const stopList = routeResult?.stops
+      .map((s, i) => `  ${i + 1}. ${s.label || s.displayName || s.address}  →  Arrive ${arrivalTimes[i]}, leave ~${departureTimes[i]}`)
+      .join('\n') ?? '';
+    const subject = encodeURIComponent('Your Property Showing Schedule');
+    const body = encodeURIComponent(
+      `Hi,\n\nHere is your optimised showing schedule:\n\n${stopList}\n\nView the full route on the map:\n${shareUrl}\n\nHave a great day!`
+    );
+    window.open(`mailto:${encodeURIComponent(email.trim())}?subject=${subject}&body=${body}`, '_blank');
   };
 
   const formatDuration = (minutes: number) => {
@@ -417,7 +433,25 @@ export default function Home() {
                           Send SMS
                         </Button>
                       </div>
-                      <p className="text-xs text-muted-foreground">Opens your SMS app with the link pre-filled</p>
+
+                      {/* Email row */}
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                          <input
+                            type="email"
+                            placeholder="Email address"
+                            value={email}
+                            onChange={e => setEmail(e.target.value)}
+                            className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          />
+                        </div>
+                        <Button size="sm" variant="outline" onClick={handleSendEmail} className="shrink-0">
+                          Send Email
+                        </Button>
+                      </div>
+
+                      <p className="text-xs text-muted-foreground">Opens your SMS or email app with the schedule pre-filled</p>
                     </div>
                   )}
                 </div>

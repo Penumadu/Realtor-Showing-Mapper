@@ -18,18 +18,23 @@ router.post("/route/optimize", async (req, res) => {
 
   const { properties } = parsed.data;
 
-  const geocodeResults = await Promise.allSettled(
-    properties.map((p) => geocodeAddress(p.address, p.label))
-  );
-
-  const failed = geocodeResults.filter((r) => r.status === "rejected");
-  if (failed.length > 0) {
-    const reasons = (failed as PromiseRejectedResult[]).map((f) => String(f.reason)).join("; ");
-    res.status(422).json({ error: "One or more addresses could not be geocoded", details: reasons });
-    return;
+  // Nominatim requires sequential requests with at least 1s delay between them
+  const locations: any[] = [];
+  for (let i = 0; i < properties.length; i++) {
+    try {
+      const loc = await geocodeAddress(properties[i].address, properties[i].label);
+      locations.push(loc);
+      if (i < properties.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1100));
+      }
+    } catch (err) {
+      res.status(422).json({
+        error: `Could not geocode address: "${properties[i].address}"`,
+        details: String(err),
+      });
+      return;
+    }
   }
-
-  const locations = (geocodeResults as PromiseFulfilledResult<any>[]).map((r) => r.value);
 
   let orderedLocations = locations;
   if (locations.length > 2) {

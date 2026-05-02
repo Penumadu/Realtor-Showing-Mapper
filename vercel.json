@@ -1,0 +1,16 @@
+{
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "BASE_PATH=/ PORT=3000 pnpm --filter @workspace/route-mapper run build",
+  "outputDirectory": "artifacts/route-mapper/dist/public",
+  "framework": null,
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/index" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "functions": {
+    "api/index.ts": {
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  }
+}

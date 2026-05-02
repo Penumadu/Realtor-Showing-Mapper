@@ -73,10 +73,12 @@ export default function Home() {
         setRouteResult(data);
       },
       onError: (error) => {
-        const detail = (error.data as { error?: string } | null)?.error ?? error.message ?? "There was an error optimizing the route.";
+        const data = error.data as { error?: string; details?: string } | null;
+        const title = data?.error ?? "Optimization Failed";
+        const description = data?.details?.replace(/^Error:\s*/, "") ?? error.message ?? "There was an error optimizing the route.";
         toast({
-          title: "Optimization Failed",
-          description: detail,
+          title,
+          description,
           variant: "destructive"
         });
       }

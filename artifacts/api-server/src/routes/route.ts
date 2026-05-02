@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { randomUUID } from "crypto";
 import { OptimizeRouteBody } from "@workspace/api-zod";
 import {
   geocodeAddress,
@@ -6,6 +7,9 @@ import {
   nearestNeighborTSP,
   fetchRoutePolyline,
 } from "../lib/routeOptimizer";
+
+// In-memory store for shared routes (keyed by shareId)
+const sharedRoutes = new Map<string, { route: unknown; startTime?: string }>();
 
 const router: IRouter = Router();
 
@@ -95,6 +99,29 @@ router.post("/route/optimize", async (req, res) => {
     totalDurationMinutes: Math.round(totalDurationMinutes),
     polyline: allPolylinePoints,
   });
+});
+
+router.post("/route/share", async (req, res) => {
+  const { route, startTime } = req.body;
+  if (!route || typeof route !== "object") {
+    res.status(400).json({ error: "route is required" });
+    return;
+  }
+  const shareId = randomUUID();
+  sharedRoutes.set(shareId, { route, startTime });
+  const host = req.headers["x-forwarded-host"] || req.headers.host || "";
+  const proto = req.headers["x-forwarded-proto"] || "https";
+  const shareUrl = `${proto}://${host}/?share=${shareId}`;
+  res.json({ shareId, shareUrl });
+});
+
+router.get("/route/share/:shareId", (req, res) => {
+  const entry = sharedRoutes.get(req.params.shareId);
+  if (!entry) {
+    res.status(404).json({ error: "Shared route not found" });
+    return;
+  }
+  res.json(entry.route);
 });
 
 router.post("/route/geocode", async (req, res) => {

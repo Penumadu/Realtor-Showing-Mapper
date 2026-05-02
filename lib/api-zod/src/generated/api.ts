@@ -101,6 +101,141 @@ export const OptimizeRouteResponse = zod.object({
 });
 
 /**
+ * Stores an optimized route and returns a share ID and URL
+ * @summary Save a route for sharing
+ */
+export const shareRouteBodyRoutePolylineItemMin = 2;
+export const shareRouteBodyRoutePolylineItemMax = 2;
+
+export const ShareRouteBody = zod.object({
+  route: zod.object({
+    stops: zod
+      .array(
+        zod.object({
+          address: zod.string(),
+          label: zod.string().optional(),
+          lat: zod.number(),
+          lng: zod.number(),
+          displayName: zod
+            .string()
+            .describe("Full formatted address returned by geocoder"),
+        }),
+      )
+      .describe("Ordered list of stops to visit"),
+    legs: zod.array(
+      zod.object({
+        from: zod.object({
+          address: zod.string(),
+          label: zod.string().optional(),
+          lat: zod.number(),
+          lng: zod.number(),
+          displayName: zod
+            .string()
+            .describe("Full formatted address returned by geocoder"),
+        }),
+        to: zod.object({
+          address: zod.string(),
+          label: zod.string().optional(),
+          lat: zod.number(),
+          lng: zod.number(),
+          displayName: zod
+            .string()
+            .describe("Full formatted address returned by geocoder"),
+        }),
+        distanceKm: zod.number(),
+        durationMinutes: zod.number(),
+        order: zod.number().describe("1-based order of this leg in the route"),
+      }),
+    ),
+    totalDistanceKm: zod.number(),
+    totalDurationMinutes: zod.number(),
+    polyline: zod
+      .array(
+        zod
+          .array(zod.number())
+          .min(shareRouteBodyRoutePolylineItemMin)
+          .max(shareRouteBodyRoutePolylineItemMax),
+      )
+      .describe(
+        "Array of [lat, lng] pairs forming the full route path for map rendering",
+      ),
+  }),
+  startTime: zod
+    .string()
+    .optional()
+    .describe("Optional start time in HH:MM format"),
+});
+
+export const ShareRouteResponse = zod.object({
+  shareId: zod.string(),
+  shareUrl: zod.string(),
+});
+
+/**
+ * Returns the stored optimized route for a given share ID
+ * @summary Retrieve a shared route
+ */
+export const GetSharedRouteParams = zod.object({
+  shareId: zod.coerce.string(),
+});
+
+export const getSharedRouteResponsePolylineItemMin = 2;
+export const getSharedRouteResponsePolylineItemMax = 2;
+
+export const GetSharedRouteResponse = zod.object({
+  stops: zod
+    .array(
+      zod.object({
+        address: zod.string(),
+        label: zod.string().optional(),
+        lat: zod.number(),
+        lng: zod.number(),
+        displayName: zod
+          .string()
+          .describe("Full formatted address returned by geocoder"),
+      }),
+    )
+    .describe("Ordered list of stops to visit"),
+  legs: zod.array(
+    zod.object({
+      from: zod.object({
+        address: zod.string(),
+        label: zod.string().optional(),
+        lat: zod.number(),
+        lng: zod.number(),
+        displayName: zod
+          .string()
+          .describe("Full formatted address returned by geocoder"),
+      }),
+      to: zod.object({
+        address: zod.string(),
+        label: zod.string().optional(),
+        lat: zod.number(),
+        lng: zod.number(),
+        displayName: zod
+          .string()
+          .describe("Full formatted address returned by geocoder"),
+      }),
+      distanceKm: zod.number(),
+      durationMinutes: zod.number(),
+      order: zod.number().describe("1-based order of this leg in the route"),
+    }),
+  ),
+  totalDistanceKm: zod.number(),
+  totalDurationMinutes: zod.number(),
+  polyline: zod
+    .array(
+      zod
+        .array(zod.number())
+        .min(getSharedRouteResponsePolylineItemMin)
+        .max(getSharedRouteResponsePolylineItemMax),
+    )
+    .describe(
+      "Array of [lat, lng] pairs forming the full route path for map rendering",
+    ),
+});
+
+/**
  * Returns lat/lng for a given address string
  * @summary Geocode a single address
  */

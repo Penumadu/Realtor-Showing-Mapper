@@ -54,6 +54,17 @@ export interface OptimizedRoute {
   polyline: number[][];
 }
 
+export interface ShareRouteBody {
+  route: OptimizedRoute;
+  /** Optional start time in HH:MM format */
+  startTime?: string;
+}
+
+export interface ShareRouteResponse {
+  shareId: string;
+  shareUrl: string;
+}
+
 export interface GeocodeBody {
   address: string;
 }

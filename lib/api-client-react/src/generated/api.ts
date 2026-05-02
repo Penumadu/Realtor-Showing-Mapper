@@ -23,6 +23,8 @@ import type {
   HealthStatus,
   OptimizeRouteBody,
   OptimizedRoute,
+  ShareRouteBody,
+  ShareRouteResponse,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -196,6 +198,181 @@ export const useOptimizeRoute = <
 > => {
   return useMutation(getOptimizeRouteMutationOptions(options));
 };
+
+/**
+ * Stores an optimized route and returns a share ID and URL
+ * @summary Save a route for sharing
+ */
+export const getShareRouteUrl = () => {
+  return `/api/route/share`;
+};
+
+export const shareRoute = async (
+  shareRouteBody: ShareRouteBody,
+  options?: RequestInit,
+): Promise<ShareRouteResponse> => {
+  return customFetch<ShareRouteResponse>(getShareRouteUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(shareRouteBody),
+  });
+};
+
+export const getShareRouteMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof shareRoute>>,
+    TError,
+    { data: BodyType<ShareRouteBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof shareRoute>>,
+  TError,
+  { data: BodyType<ShareRouteBody> },
+  TContext
+> => {
+  const mutationKey = ["shareRoute"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof shareRoute>>,
+    { data: BodyType<ShareRouteBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return shareRoute(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ShareRouteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof shareRoute>>
+>;
+export type ShareRouteMutationBody = BodyType<ShareRouteBody>;
+export type ShareRouteMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Save a route for sharing
+ */
+export const useShareRoute = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof shareRoute>>,
+    TError,
+    { data: BodyType<ShareRouteBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof shareRoute>>,
+  TError,
+  { data: BodyType<ShareRouteBody> },
+  TContext
+> => {
+  return useMutation(getShareRouteMutationOptions(options));
+};
+
+/**
+ * Returns the stored optimized route for a given share ID
+ * @summary Retrieve a shared route
+ */
+export const getGetSharedRouteUrl = (shareId: string) => {
+  return `/api/route/share/${shareId}`;
+};
+
+export const getSharedRoute = async (
+  shareId: string,
+  options?: RequestInit,
+): Promise<OptimizedRoute> => {
+  return customFetch<OptimizedRoute>(getGetSharedRouteUrl(shareId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSharedRouteQueryKey = (shareId: string) => {
+  return [`/api/route/share/${shareId}`] as const;
+};
+
+export const getGetSharedRouteQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSharedRoute>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  shareId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSharedRoute>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSharedRouteQueryKey(shareId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSharedRoute>>> = ({
+    signal,
+  }) => getSharedRoute(shareId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!shareId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSharedRoute>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSharedRouteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSharedRoute>>
+>;
+export type GetSharedRouteQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Retrieve a shared route
+ */
+
+export function useGetSharedRoute<
+  TData = Awaited<ReturnType<typeof getSharedRoute>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  shareId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSharedRoute>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSharedRouteQueryOptions(shareId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * Returns lat/lng for a given address string

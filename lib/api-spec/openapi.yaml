@@ -57,6 +57,56 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /route/share:
+    post:
+      operationId: shareRoute
+      tags: [route]
+      summary: Save a route for sharing
+      description: Stores an optimized route and returns a share ID and URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShareRouteBody"
+      responses:
+        "200":
+          description: Share info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareRouteResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /route/share/{shareId}:
+    get:
+      operationId: getSharedRoute
+      tags: [route]
+      summary: Retrieve a shared route
+      description: Returns the stored optimized route for a given share ID
+      parameters:
+        - name: shareId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Shared route
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OptimizedRoute"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /route/geocode:
     post:
       operationId: geocodeAddress
@@ -192,6 +242,28 @@ components:
         - totalDistanceKm
         - totalDurationMinutes
         - polyline
+
+    ShareRouteBody:
+      type: object
+      properties:
+        route:
+          $ref: "#/components/schemas/OptimizedRoute"
+        startTime:
+          type: string
+          description: Optional start time in HH:MM format
+      required:
+        - route
+
+    ShareRouteResponse:
+      type: object
+      properties:
+        shareId:
+          type: string
+        shareUrl:
+          type: string
+      required:
+        - shareId
+        - shareUrl
 
     GeocodeBody:
       type: object

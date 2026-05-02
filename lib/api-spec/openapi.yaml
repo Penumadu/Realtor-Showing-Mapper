@@ -3,13 +3,15 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: API specification for Showings Route Mapper
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: route
+    description: Route optimization operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,63 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /route/optimize:
+    post:
+      operationId: optimizeRoute
+      tags: [route]
+      summary: Optimize route for property showings
+      description: Accepts a list of property addresses, geocodes them, computes optimized visit order, and returns route with distances and travel times
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OptimizeRouteBody"
+      responses:
+        "200":
+          description: Optimized route
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OptimizedRoute"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Geocoding or routing failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /route/geocode:
+    post:
+      operationId: geocodeAddress
+      tags: [route]
+      summary: Geocode a single address
+      description: Returns lat/lng for a given address string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GeocodeBody"
+      responses:
+        "200":
+          description: Geocoded location
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeocodedLocation"
+        "422":
+          description: Address could not be geocoded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +93,120 @@ components:
       required:
         - status
 
+    PropertyAddress:
+      type: object
+      properties:
+        address:
+          type: string
+          description: Full address string
+        label:
+          type: string
+          description: Optional custom label (e.g. "Starting Point", "123 Oak St")
+      required:
+        - address
+
+    OptimizeRouteBody:
+      type: object
+      properties:
+        properties:
+          type: array
+          items:
+            $ref: "#/components/schemas/PropertyAddress"
+          minItems: 2
+          description: List of property addresses to visit
+        startAddress:
+          type: string
+          description: Optional starting address for the agent (defaults to first property)
+      required:
+        - properties
+
+    GeocodedLocation:
+      type: object
+      properties:
+        address:
+          type: string
+        label:
+          type: string
+        lat:
+          type: number
+        lng:
+          type: number
+        displayName:
+          type: string
+          description: Full formatted address returned by geocoder
+      required:
+        - address
+        - lat
+        - lng
+        - displayName
+
+    RouteLeg:
+      type: object
+      properties:
+        from:
+          $ref: "#/components/schemas/GeocodedLocation"
+        to:
+          $ref: "#/components/schemas/GeocodedLocation"
+        distanceKm:
+          type: number
+        durationMinutes:
+          type: number
+        order:
+          type: integer
+          description: 1-based order of this leg in the route
+      required:
+        - from
+        - to
+        - distanceKm
+        - durationMinutes
+        - order
+
+    OptimizedRoute:
+      type: object
+      properties:
+        stops:
+          type: array
+          items:
+            $ref: "#/components/schemas/GeocodedLocation"
+          description: Ordered list of stops to visit
+        legs:
+          type: array
+          items:
+            $ref: "#/components/schemas/RouteLeg"
+        totalDistanceKm:
+          type: number
+        totalDurationMinutes:
+          type: number
+        polyline:
+          type: array
+          items:
+            type: array
+            items:
+              type: number
+            minItems: 2
+            maxItems: 2
+          description: Array of [lat, lng] pairs forming the full route path for map rendering
+      required:
+        - stops
+        - legs
+        - totalDistanceKm
+        - totalDurationMinutes
+        - polyline
+
+    GeocodeBody:
+      type: object
+      properties:
+        address:
+          type: string
+      required:
+        - address
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        details:
+          type: string
+      required:
+        - error

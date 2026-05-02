@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useOptimizeRoute } from '@workspace/api-client-react';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Plus, MapPin, Map, Navigation, Clock, Trash2, ArrowRight } from 'lucide-react';
 import MapView from '@/components/MapView';
+import AddressAutocomplete from '@/components/AddressAutocomplete';
 import type { OptimizedRoute } from '@workspace/api-client-react';
 import { Spinner } from '@/components/ui/spinner';
 import { Badge } from '@/components/ui/badge';
@@ -121,11 +121,10 @@ export default function Home() {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="start-address">Starting Location (Optional)</Label>
-                  <Input 
-                    id="start-address" 
-                    placeholder="e.g. Office Address, 123 Main St" 
+                  <AddressAutocomplete
                     value={startAddress}
-                    onChange={(e) => setStartAddress(e.target.value)}
+                    onChange={setStartAddress}
+                    placeholder="e.g. Office Address, 123 Main St"
                     data-testid="input-start-address"
                   />
                   <p className="text-xs text-muted-foreground">Leave blank to start at the first property</p>
@@ -159,18 +158,18 @@ export default function Home() {
                             </Button>
                           </div>
                           <div className="space-y-3">
-                            <Input
-                              placeholder="123 Main St, City, State"
+                            <AddressAutocomplete
                               value={prop.address}
-                              onChange={(e) => handlePropertyChange(prop.id, 'address', e.target.value)}
+                              onChange={(v) => handlePropertyChange(prop.id, 'address', v)}
+                              placeholder="123 Main St, City, State"
                               className="bg-background"
                               data-testid={`input-address-${prop.id}`}
                             />
-                            <Input
+                            <input
                               placeholder="Nickname (e.g. 3BR Colonial) - Optional"
                               value={prop.label}
                               onChange={(e) => handlePropertyChange(prop.id, 'label', e.target.value)}
-                              className="text-sm bg-background/50 h-8"
+                              className="flex h-8 w-full rounded-md border border-input bg-background/50 px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                               data-testid={`input-label-${prop.id}`}
                             />
                           </div>

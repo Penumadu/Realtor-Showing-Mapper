@@ -1,7 +1,7 @@
 {
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm --filter @workspace/api-server run build && BASE_PATH=/ PORT=3000 pnpm --filter @workspace/route-mapper run build",
-  "outputDirectory": "artifacts/route-mapper/dist",
+  "buildCommand": "pnpm --filter @workspace/api-server run build && BASE_PATH=/ PORT=3000 pnpm --filter @workspace/route-mapper run build && rm -rf dist && mv artifacts/route-mapper/dist dist",
+  "outputDirectory": "dist",
   "framework": null,
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api" },

@@ -1,6 +1,6 @@
 {
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm --filter @workspace/api-server run build && VERCEL=1 BASE_PATH=/ PORT=3000 pnpm --filter @workspace/route-mapper run build && ( [ -d public ] || ( mkdir -p public && cp -r artifacts/route-mapper/dist/* public/ ) )",
+  "buildCommand": "pnpm --filter @workspace/api-server run build && VERCEL=1 BASE_PATH=/ PORT=3000 pnpm --filter @workspace/route-mapper run build && mkdir -p public && cp -r artifacts/route-mapper/dist/* public/",
   "outputDirectory": "public",
   "framework": null,
   "rewrites": [

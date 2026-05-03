@@ -16,11 +16,8 @@ const basePath = process.env.BASE_PATH ?? "/";
 
 const isReplit = Boolean(process.env.REPL_ID);
 
-// On Vercel (VERCEL=1), output directly to the repo-root "public/" directory
-// so Vercel finds it without any extra copy step or dashboard configuration.
-// On Replit, output to the standard dist/public path used by the artifact config.
 const outDir = process.env.VERCEL
-  ? path.resolve(__dirname, "../../public")
+  ? path.resolve(__dirname, "dist")
   : path.resolve(__dirname, "dist/public");
 
 

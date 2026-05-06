@@ -4,11 +4,11 @@
   "outputDirectory": "dist",
   "framework": null,
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index.js" },
+    { "source": "/api/(.*)", "destination": "/api/index.mjs" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "functions": {
-    "api/index.js": {
+    "api/index.mjs": {
       "memory": 1024,
       "maxDuration": 30,
       "includeFiles": "artifacts/api-server/dist/*.mjs"

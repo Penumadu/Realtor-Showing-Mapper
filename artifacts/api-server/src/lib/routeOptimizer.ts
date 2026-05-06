@@ -104,7 +104,7 @@ async function tryNominatim(
 ): Promise<{ lat: number; lng: number; displayName: string } | null> {
   try {
     const url = `${NOMINATIM_BASE}/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=1`;
-    const res = await fetch(url, { headers: HEADERS });
+    const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(2000) });
     if (!res.ok) return null;
     const data = (await res.json()) as any[];
     if (!data || data.length === 0) return null;
@@ -123,7 +123,7 @@ async function tryArcGIS(
 ): Promise<{ lat: number; lng: number; displayName: string } | null> {
   try {
     const url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?SingleLine=${encodeURIComponent(query)}&f=json&maxLocations=1`;
-    const res = await fetch(url, { headers: HEADERS });
+    const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(2000) });
     if (!res.ok) return null;
     const data = (await res.json()) as any;
     if (!data.candidates || data.candidates.length === 0) return null;
@@ -145,7 +145,7 @@ async function tryPhoton(
 ): Promise<{ lat: number; lng: number; displayName: string } | null> {
   try {
     const url = `${PHOTON_BASE}/api/?q=${encodeURIComponent(query)}&limit=5&lang=en`;
-    const res = await fetch(url, { headers: HEADERS });
+    const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(2000) });
     if (!res.ok) return null;
     const data = (await res.json()) as any;
     const features = data?.features;
@@ -212,7 +212,7 @@ export async function geocodeAddress(address: string, label?: string): Promise<G
 export async function buildDistanceMatrix(locations: GeocodedLocation[]): Promise<number[][]> {
   const coords = locations.map((l) => `${l.lng},${l.lat}`).join(";");
   const url = `${OSRM_BASE}/table/v1/driving/${coords}?annotations=duration,distance`;
-  const res = await fetch(url, { headers: HEADERS });
+  const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(1500) });
   if (!res.ok) throw new Error(`OSRM table error: ${res.status}`);
   const data = (await res.json()) as any;
   if (data.code !== "Ok") throw new Error(`OSRM table failed: ${data.code}`);
@@ -254,7 +254,7 @@ export async function fetchRoutePolyline(
 ): Promise<RouteSegment> {
   const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;
   const url = `${OSRM_BASE}/route/v1/driving/${coords}?overview=full&geometries=geojson`;
-  const res = await fetch(url, { headers: HEADERS });
+  const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(1500) });
   if (!res.ok) throw new Error(`OSRM route error: ${res.status}`);
   const data = (await res.json()) as any;
   if (data.code !== "Ok" || !data.routes?.length) {

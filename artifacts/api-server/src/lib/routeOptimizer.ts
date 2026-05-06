@@ -118,6 +118,26 @@ async function tryNominatim(
   }
 }
 
+async function tryArcGIS(
+  query: string
+): Promise<{ lat: number; lng: number; displayName: string } | null> {
+  try {
+    const url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?SingleLine=${encodeURIComponent(query)}&f=json&maxLocations=1`;
+    const res = await fetch(url, { headers: HEADERS });
+    if (!res.ok) return null;
+    const data = (await res.json()) as any;
+    if (!data.candidates || data.candidates.length === 0) return null;
+    const candidate = data.candidates[0];
+    return {
+      lat: candidate.location.y,
+      lng: candidate.location.x,
+      displayName: candidate.address,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function tryPhoton(
   query: string,
   cityTokens: string[],
@@ -164,6 +184,12 @@ export async function geocodeAddress(address: string, label?: string): Promise<G
   const queries = Array.from(new Set([expanded, address]));
 
   for (const query of queries) {
+    // Try ArcGIS first as it has the best coverage for new addresses
+    const arcgisResult = await tryArcGIS(query);
+    if (arcgisResult) {
+      return { address, label, ...arcgisResult };
+    }
+
     const nominatimResult = await tryNominatim(query);
     if (nominatimResult) {
       return { address, label, ...nominatimResult };

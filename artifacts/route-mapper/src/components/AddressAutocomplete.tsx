@@ -5,8 +5,6 @@ import { MapPin, Loader2 } from "lucide-react";
 interface Suggestion {
   displayName: string;
   shortName: string;
-  lat: number;
-  lng: number;
 }
 
 interface AddressAutocompleteProps {
@@ -17,37 +15,7 @@ interface AddressAutocompleteProps {
   "data-testid"?: string;
 }
 
-function formatSuggestion(f: any): Suggestion {
-  const p = f.properties;
-  const parts: string[] = [];
-  const shortParts: string[] = [];
 
-  if (p.housenumber && p.street) {
-    parts.push(`${p.housenumber} ${p.street}`);
-    shortParts.push(`${p.housenumber} ${p.street}`);
-  } else if (p.street) {
-    parts.push(p.street);
-    shortParts.push(p.street);
-  } else if (p.name) {
-    parts.push(p.name);
-    shortParts.push(p.name);
-  }
-
-  if (p.city || p.locality) parts.push(p.city ?? p.locality);
-  if (p.state) parts.push(p.state);
-  if (p.country) parts.push(p.country);
-
-  const shortName = shortParts.length > 0
-    ? `${shortParts[0]}, ${p.city ?? p.locality ?? p.state ?? ""}`.trim().replace(/,\s*$/, "")
-    : parts.join(", ");
-
-  return {
-    displayName: parts.join(", "),
-    shortName,
-    lat: f.geometry.coordinates[1],
-    lng: f.geometry.coordinates[0],
-  };
-}
 
 export default function AddressAutocomplete({
   value,
@@ -77,19 +45,18 @@ export default function AddressAutocomplete({
     setIsLoading(true);
     try {
       const res = await fetch(
-        `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=6&lang=en`,
+        `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/suggest?text=${encodeURIComponent(query)}&f=json&maxSuggestions=5`,
         {
-          headers: { "User-Agent": "ShowingsRouteMapper/1.0" },
           signal: abortRef.current.signal,
         }
       );
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
-      const features = data?.features ?? [];
-      const results: Suggestion[] = features
-        .filter((f: any) => f.properties?.street || f.properties?.name)
-        .slice(0, 5)
-        .map(formatSuggestion);
+      const suggestionsList = data?.suggestions ?? [];
+      const results: Suggestion[] = suggestionsList.map((s: any) => ({
+        displayName: s.text,
+        shortName: s.text.split(",")[0],
+      }));
       setSuggestions(results);
       setIsOpen(results.length > 0);
       setActiveIndex(-1);

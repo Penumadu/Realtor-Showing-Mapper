@@ -27,15 +27,12 @@ router.post("/route/optimize", async (req, res) => {
     ? [{ address: startAddress, label: "Starting Location" }, ...properties]
     : properties;
 
-  // Geocode sequentially with delay to avoid API limits
+  // Geocode sequentially (delay removed to prevent Vercel 10s timeouts)
   const locations: any[] = [];
   for (let i = 0; i < allProperties.length; i++) {
     try {
       const loc = await geocodeAddress(allProperties[i].address, allProperties[i].label);
       locations.push(loc);
-      if (i < allProperties.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 1100));
-      }
     } catch (err) {
       res.status(422).json({
         error: `Could not geocode address: "${allProperties[i].address}"`,

@@ -33,7 +33,7 @@ export default function AddressAutocomplete({
   const abortRef = useRef<AbortController | null>(null);
 
   const fetchSuggestions = useCallback(async (query: string) => {
-    if (query.trim().length < 3) {
+    if (query.trim().length < 1) {
       setSuggestions([]);
       setIsOpen(false);
       return;
@@ -45,7 +45,7 @@ export default function AddressAutocomplete({
     setIsLoading(true);
     try {
       const res = await fetch(
-        `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/suggest?text=${encodeURIComponent(query)}&f=json&maxSuggestions=5`,
+        `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/suggest?text=${encodeURIComponent(query)}&f=json&maxSuggestions=5&countryCode=CAN`,
         {
           signal: abortRef.current.signal,
         }
@@ -74,7 +74,7 @@ export default function AddressAutocomplete({
     const v = e.target.value;
     onChange(v);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchSuggestions(v), 280);
+    debounceRef.current = setTimeout(() => fetchSuggestions(v), 150);
   };
 
   const selectSuggestion = (suggestion: Suggestion) => {

@@ -20,20 +20,25 @@ router.post("/route/optimize", async (req, res) => {
     return;
   }
 
-  const { properties } = parsed.data;
+  const { properties, startAddress } = parsed.data;
 
-  // Nominatim requires sequential requests with at least 1s delay between them
+  // Prepare full list of properties to route, including startAddress if provided
+  const allProperties = startAddress 
+    ? [{ address: startAddress, label: "Starting Location" }, ...properties]
+    : properties;
+
+  // Geocode sequentially with delay to avoid API limits
   const locations: any[] = [];
-  for (let i = 0; i < properties.length; i++) {
+  for (let i = 0; i < allProperties.length; i++) {
     try {
-      const loc = await geocodeAddress(properties[i].address, properties[i].label);
+      const loc = await geocodeAddress(allProperties[i].address, allProperties[i].label);
       locations.push(loc);
-      if (i < properties.length - 1) {
+      if (i < allProperties.length - 1) {
         await new Promise((resolve) => setTimeout(resolve, 1100));
       }
     } catch (err) {
       res.status(422).json({
-        error: `Could not geocode address: "${properties[i].address}"`,
+        error: `Could not geocode address: "${allProperties[i].address}"`,
         details: String(err),
       });
       return;

@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
+    "dev": "export PORT=3001 && export BASE_PATH=/ && pnpm -r --parallel run dev",
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
@@ -10,7 +11,10 @@
   },
   "private": true,
   "devDependencies": {
-    "typescript": "~5.9.2",
-    "prettier": "^3.8.1"
+    "@rollup/rollup-darwin-arm64": "^4.60.2",
+    "@tailwindcss/oxide-darwin-arm64": "^4.2.4",
+    "lightningcss-darwin-arm64": "^1.32.0",
+    "prettier": "^3.8.1",
+    "typescript": "~5.9.2"
   }
 }

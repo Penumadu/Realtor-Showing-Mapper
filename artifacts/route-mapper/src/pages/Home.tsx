@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Plus, MapPin, Map, Navigation, Clock, Trash2, ArrowRight, Share2, MessageSquare, Mail, Copy, Check, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Plus, MapPin, Map, Navigation, Clock, Trash2, ArrowRight, Share2, MessageSquare, Mail, Copy, Check, CheckCircle2, AlertCircle, Loader2, LogIn, LogOut, Cloud, Folder } from 'lucide-react';
 import MapView from '@/components/MapView';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 import type { OptimizedRoute } from '@workspace/api-client-react';
@@ -13,6 +13,9 @@ import { Spinner } from '@/components/ui/spinner';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { collection, addDoc, getDocs, query, where, doc, deleteDoc, Timestamp } from 'firebase/firestore';
+import { auth, db, googleProvider, isConfigured } from '@/lib/firebase';
 
 const SHOWING_DURATION_MIN = 30;
 
@@ -61,6 +64,213 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'single' | 'bulk'>('single');
   const [bulkAddressText, setBulkAddressText] = useState('');
   const [isValidating, setIsValidating] = useState(false);
+
+  // Firebase integration states
+  const [user, setUser] = useState<User | null>(null);
+  const [savedRoutes, setSavedRoutes] = useState<any[]>([]);
+  const [loadingSavedRoutes, setLoadingSavedRoutes] = useState(false);
+  const [isSavingRoute, setIsSavingRoute] = useState(false);
+
+  // Sync auth state
+  useEffect(() => {
+    if (!isConfigured) return;
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        fetchSavedRoutes(currentUser.uid);
+      } else {
+        setSavedRoutes([]);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const fetchSavedRoutes = async (uid: string) => {
+    setLoadingSavedRoutes(true);
+    try {
+      const q = query(
+        collection(db, "routes"),
+        where("userId", "==", uid)
+      );
+      const querySnapshot = await getDocs(q);
+      const routes: any[] = [];
+      querySnapshot.forEach((doc) => {
+        routes.push({ id: doc.id, ...doc.data() });
+      });
+      // Sort client-side by createdAt descending to avoid index requirement
+      routes.sort((a, b) => {
+        const timeA = a.createdAt?.seconds || 0;
+        const timeB = b.createdAt?.seconds || 0;
+        return timeB - timeA;
+      });
+      setSavedRoutes(routes);
+    } catch (err) {
+      console.error("Error fetching saved routes:", err);
+    } finally {
+      setLoadingSavedRoutes(false);
+    }
+  };
+
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+      toast({
+        title: "Logged In",
+        description: "Successfully signed in with Google."
+      });
+    } catch (err: any) {
+      toast({
+        title: "Login Failed",
+        description: err.message || "Could not sign in with Google.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setSavedRoutes([]);
+      toast({
+        title: "Logged Out",
+        description: "Successfully signed out."
+      });
+    } catch (err: any) {
+      toast({
+        title: "Logout Failed",
+        description: err.message || "Could not sign out.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleSaveRoute = async () => {
+    if (!routeResult) return;
+    
+    let currentUser = user;
+    if (!currentUser) {
+      if (!isConfigured) {
+        toast({
+          title: "Firebase Not Configured",
+          description: "Please populate your Firebase keys in the .env file to use this feature.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      const confirmLogin = window.confirm("You must be signed in to save routes. Would you like to sign in with Google now?");
+      if (!confirmLogin) return;
+      
+      try {
+        const result = await signInWithPopup(auth, googleProvider);
+        currentUser = result.user;
+        setUser(currentUser);
+      } catch (err: any) {
+        toast({
+          title: "Login Failed",
+          description: err.message || "Failed to sign in.",
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+    
+    if (!currentUser) return;
+
+    // Helper to extract city name
+    const getRouteCity = () => {
+      // Find the first stop that has a geocoded address and is not a generic "Starting Location"
+      const stop = routeResult.stops.find(s => s.displayName && s.label !== "Starting Location");
+      if (!stop) return "";
+      const parts = stop.displayName.split(",");
+      if (parts.length > 1) {
+        for (let i = 1; i < parts.length; i++) {
+          const segment = parts[i].trim();
+          if (segment.length > 3 && !/\d/.test(segment)) {
+            return segment;
+          }
+        }
+        return parts[1].trim();
+      }
+      return stop.address || "";
+    };
+
+    const currentDate = new Date().toLocaleDateString(undefined, { month: '2-digit', day: '2-digit', year: 'numeric' });
+    const city = getRouteCity();
+    const defaultName = city ? `${currentDate} - ${city}` : `${currentDate} - Route`;
+    
+    const name = window.prompt("Save Route As:", defaultName);
+    if (name === null) return; // Cancelled
+    
+    setIsSavingRoute(true);
+    try {
+      await addDoc(collection(db, "routes"), {
+        userId: currentUser.uid,
+        title: name.trim() || defaultName,
+        createdAt: Timestamp.now(),
+        startAddress,
+        startTime,
+        route: routeResult
+      });
+      
+      toast({
+        title: "Route Saved",
+        description: "Your route has been saved to the cloud."
+      });
+      
+      fetchSavedRoutes(currentUser.uid);
+    } catch (err: any) {
+      toast({
+        title: "Failed to Save",
+        description: err.message || "An error occurred while saving. Make sure your Firestore Database is created and active in the console.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSavingRoute(false);
+    }
+  };
+
+  const handleDeleteRoute = async (id: string) => {
+    if (!user) return;
+    if (!window.confirm("Are you sure you want to delete this saved route?")) return;
+    
+    try {
+      await deleteDoc(doc(db, "routes", id));
+      toast({
+        title: "Route Deleted",
+        description: "The route has been removed."
+      });
+      fetchSavedRoutes(user.uid);
+    } catch (err: any) {
+      toast({
+        title: "Failed to Delete",
+        description: err.message || "An error occurred while deleting.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleLoadRoute = (saved: any) => {
+    setRouteResult(saved.route);
+    setStartTime(saved.startTime || '09:00');
+    setStartAddress(saved.startAddress || '');
+    
+    // Deconstruct properties back to properties array for editing
+    const restoredProperties = saved.route.stops
+      .slice(saved.startAddress ? 1 : 0)
+      .map((stop: any, idx: number) => ({
+        id: Math.random().toString(36).substr(2, 9),
+        address: stop.address,
+        label: stop.label || `Property ${idx + 1}`
+      }));
+    setProperties(restoredProperties);
+
+    toast({
+      title: "Route Loaded",
+      description: `Loaded route with ${restoredProperties.length} stops.`
+    });
+  };
+
   const [validationResults, setValidationResults] = useState<{
     address: string;
     status: 'idle' | 'pending' | 'success' | 'error';
@@ -337,7 +547,13 @@ export default function Home() {
     }
     const totalDuration = formatDuration(routeResult.totalDurationMinutes + routeResult.stops.length * SHOWING_DURATION_MIN);
     const stopList = routeResult.stops
-      .map((s, i) => `📍 Stop ${i + 1}: ${s.label || s.displayName || s.address}\n   ⏰ Arrive: ${arrivalTimes[i]} | Leave: ~${departureTimes[i]}`)
+      .map((s, i) => {
+        const address = s.displayName || s.address;
+        const labelText = s.label && s.label.trim() && !/^(Property|Prop|pro)\s*\d+$/i.test(s.label.trim())
+          ? ` (${s.label.trim()})`
+          : '';
+        return `📍 Stop ${i + 1}: ${address}${labelText}\n   ⏰ Arrive: ${arrivalTimes[i]} | Leave: ~${departureTimes[i]}`;
+      })
       .join('\n\n');
     const subject = encodeURIComponent('Your Optimized Showing Route & Itinerary');
     const body = encodeURIComponent(
@@ -411,9 +627,119 @@ export default function Home() {
           </div>
         </div>
 
+        {/* User Auth Bar */}
+        <div className="px-6 py-3 border-b bg-muted/30 flex items-center justify-between gap-3 text-sm shrink-0">
+          {!isConfigured ? (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground w-full justify-center">
+              <Cloud size={14} className="opacity-60" />
+              <span>Firebase not configured (check .env)</span>
+            </div>
+          ) : !user ? (
+            <div className="flex items-center justify-between w-full">
+              <span className="text-xs text-muted-foreground">Sign in to save and load routes</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLogin}
+                className="h-7 text-xs flex items-center gap-1.5 border-primary/20 hover:border-primary/50"
+              >
+                <LogIn size={13} />
+                Sign In
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center gap-2 min-w-0">
+                {user.photoURL ? (
+                  <img
+                    src={user.photoURL}
+                    alt={user.displayName || "User"}
+                    className="w-6 h-6 rounded-full ring-1 ring-border shadow-sm shrink-0"
+                  />
+                ) : (
+                  <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold ring-1 ring-border shrink-0">
+                    {user.displayName ? user.displayName.charAt(0).toUpperCase() : (user.email ? user.email.charAt(0).toUpperCase() : 'U')}
+                  </div>
+                )}
+                <span className="text-xs font-semibold truncate text-foreground/80">
+                  {user.displayName || user.email}
+                </span>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleLogout}
+                className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
+                title="Sign Out"
+              >
+                <LogOut size={13} />
+              </Button>
+            </div>
+          )}
+        </div>
+
         <ScrollArea className="flex-1">
           {!routeResult ? (
             <div className="p-6 space-y-6">
+              {/* Saved Routes List */}
+              {user && (
+                <div className="space-y-3 border-b pb-6">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-semibold flex items-center gap-1.5">
+                      <Folder size={15} className="text-primary" />
+                      Saved Routes
+                    </Label>
+                    <Badge variant="secondary" className="text-[10px]">
+                      {loadingSavedRoutes ? "Loading..." : `${savedRoutes.length} saved`}
+                    </Badge>
+                  </div>
+                  {loadingSavedRoutes ? (
+                    <div className="text-xs text-muted-foreground py-4 text-center">
+                      <Loader2 size={16} className="animate-spin mx-auto mb-1 opacity-70" />
+                      Loading routes...
+                    </div>
+                  ) : savedRoutes.length === 0 ? (
+                    <div className="text-xs text-muted-foreground py-4 px-2 text-center border border-dashed rounded-lg bg-muted/10">
+                      No saved routes yet. Plan a route and save it to see it here!
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
+                      {savedRoutes.map((saved) => (
+                        <Card 
+                          key={saved.id} 
+                          className="hover:bg-accent border border-border/50 hover:border-border cursor-pointer transition-all duration-200 group relative overflow-hidden"
+                          onClick={() => handleLoadRoute(saved)}
+                        >
+                          <CardContent className="p-3 flex items-center justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="text-xs font-semibold truncate group-hover:text-primary transition-colors">
+                                {saved.title}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground mt-0.5">
+                                {saved.createdAt?.seconds 
+                                  ? new Date(saved.createdAt.seconds * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) 
+                                  : "Recently Saved"
+                                } · {saved.route.stops.length} stops · {saved.route.totalDistanceKm.toFixed(1)} km
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0 transition-all duration-200"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteRoute(saved.id);
+                              }}
+                            >
+                              <Trash2 size={12} />
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="space-y-4">
                 {/* Start Location */}
                 <div className="space-y-2">
@@ -644,11 +970,31 @@ export default function Home() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 font-semibold text-sm">
                       <Share2 size={15} className="text-primary" />
-                      Share This Route
+                      Share & Save Route
                     </div>
-                    {loadingShare && (
-                      <Loader2 size={14} className="text-primary animate-spin" />
-                    )}
+                    <div className="flex items-center gap-2">
+                      {user ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={handleSaveRoute}
+                          disabled={isSavingRoute}
+                          className="h-7 px-2 text-xs flex items-center gap-1.5 text-primary hover:text-primary hover:bg-primary/5"
+                        >
+                          {isSavingRoute ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <Cloud size={12} />
+                          )}
+                          Save
+                        </Button>
+                      ) : isConfigured ? (
+                        <span className="text-[10px] text-muted-foreground">Sign in to save</span>
+                      ) : null}
+                      {loadingShare && (
+                        <Loader2 size={14} className="text-primary animate-spin" />
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-3">
@@ -730,11 +1076,66 @@ export default function Home() {
                       </Button>
                     </div>
 
-                    <p className="text-xs text-muted-foreground">Opens your SMS or email app with the schedule and map pre-filled</p>
-                  </div>
-                </div>
-              </div>
-            </div>
+                     <p className="text-xs text-muted-foreground">Opens your SMS or email app with the schedule and map pre-filled</p>
+                   </div>
+                 </div>
+
+                 {/* Persistent Saved Routes (at the bottom of the itinerary view) */}
+                 {user && (
+                   <div className="border rounded-xl p-4 space-y-3 bg-muted/30">
+                     <div className="flex items-center justify-between">
+                       <Label className="text-sm font-semibold flex items-center gap-1.5">
+                         <Folder size={15} className="text-primary" />
+                         My Saved Routes
+                       </Label>
+                       <Badge variant="secondary" className="text-[10px]">
+                         {loadingSavedRoutes ? "Loading..." : `${savedRoutes.length} saved`}
+                       </Badge>
+                     </div>
+                     {loadingSavedRoutes ? (
+                       <div className="text-xs text-muted-foreground py-2 text-center">
+                         <Loader2 size={14} className="animate-spin mx-auto mb-0.5 opacity-70" />
+                         Loading...
+                       </div>
+                     ) : savedRoutes.length === 0 ? (
+                       <div className="text-xs text-muted-foreground py-2 text-center">
+                         No saved routes yet.
+                       </div>
+                     ) : (
+                       <div className="space-y-1.5 max-h-[150px] overflow-y-auto pr-1">
+                         {savedRoutes.map((saved) => (
+                           <div 
+                             key={saved.id}
+                             className="hover:bg-accent border border-border/40 hover:border-border/80 cursor-pointer p-2 rounded-lg flex items-center justify-between gap-2 transition-all duration-200 group"
+                             onClick={() => handleLoadRoute(saved)}
+                           >
+                             <div className="min-w-0 flex-1">
+                               <div className="text-xs font-semibold truncate group-hover:text-primary transition-colors">
+                                 {saved.title}
+                               </div>
+                               <div className="text-[9px] text-muted-foreground mt-0.5 truncate">
+                                 {saved.route.stops.length} stops · {saved.route.totalDistanceKm.toFixed(1)} km
+                               </div>
+                             </div>
+                             <Button
+                               variant="ghost"
+                               size="icon"
+                               className="h-5 w-5 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 handleDeleteRoute(saved.id);
+                               }}
+                             >
+                               <Trash2 size={10} />
+                             </Button>
+                           </div>
+                         ))}
+                       </div>
+                     )}
+                   </div>
+                 )}
+               </div>
+             </div>
           )}
         </ScrollArea>
 

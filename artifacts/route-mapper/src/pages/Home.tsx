@@ -95,7 +95,25 @@ export default function Home() {
       const querySnapshot = await getDocs(q);
       const routes: any[] = [];
       querySnapshot.forEach((doc) => {
-        routes.push({ id: doc.id, ...doc.data() });
+        const data = doc.data();
+        let parsedRoute = data.route;
+        if (typeof parsedRoute === 'string') {
+          try {
+            parsedRoute = JSON.parse(parsedRoute);
+          } catch (e) {
+            console.error("Error parsing saved route JSON:", e);
+          }
+        } else if (parsedRoute && typeof parsedRoute.polyline === 'string') {
+          try {
+            parsedRoute = {
+              ...parsedRoute,
+              polyline: JSON.parse(parsedRoute.polyline)
+            };
+          } catch (e) {
+            console.error("Error parsing polyline JSON:", e);
+          }
+        }
+        routes.push({ id: doc.id, ...data, route: parsedRoute });
       });
       // Sort client-side by createdAt descending to avoid index requirement
       routes.sort((a, b) => {
@@ -210,7 +228,7 @@ export default function Home() {
         createdAt: Timestamp.now(),
         startAddress,
         startTime,
-        route: routeResult
+        route: JSON.stringify(routeResult)
       });
       
       toast({
@@ -251,12 +269,15 @@ export default function Home() {
   };
 
   const handleLoadRoute = (saved: any) => {
-    setRouteResult(saved.route);
+    const restoredRoute = saved.route;
+    if (!restoredRoute) return;
+
+    setRouteResult(restoredRoute);
     setStartTime(saved.startTime || '09:00');
     setStartAddress(saved.startAddress || '');
     
     // Deconstruct properties back to properties array for editing
-    const restoredProperties = saved.route.stops
+    const restoredProperties = restoredRoute.stops
       .slice(saved.startAddress ? 1 : 0)
       .map((stop: any, idx: number) => ({
         id: Math.random().toString(36).substr(2, 9),

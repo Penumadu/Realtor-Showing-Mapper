@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
-import { useOptimizeRoute, useShareRoute, useGetSharedRoute } from '@workspace/api-client-react';
+import { useOptimizeRoute, useShareRoute, useGetSharedRoute, geocodeAddress } from '@workspace/api-client-react';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Plus, MapPin, Map, Navigation, Clock, Trash2, ArrowRight, Share2, MessageSquare, Mail, Copy, Check } from 'lucide-react';
+import { Plus, MapPin, Map, Navigation, Clock, Trash2, ArrowRight, Share2, MessageSquare, Mail, Copy, Check, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import MapView from '@/components/MapView';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 import type { OptimizedRoute } from '@workspace/api-client-react';
 import { Spinner } from '@/components/ui/spinner';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
 
 const SHOWING_DURATION_MIN = 30;
 
@@ -49,6 +51,15 @@ export default function Home() {
   const [email, setEmail] = useState('');
   const [copied, setCopied] = useState(false);
   const [loadingShare, setLoadingShare] = useState(false);
+  const [activeTab, setActiveTab] = useState<'single' | 'bulk'>('single');
+  const [bulkAddressText, setBulkAddressText] = useState('');
+  const [isValidating, setIsValidating] = useState(false);
+  const [validationResults, setValidationResults] = useState<{
+    address: string;
+    status: 'idle' | 'pending' | 'success' | 'error';
+    error?: string;
+    displayName?: string;
+  }[]>([]);
 
   // Check for ?share=ID on load
   const urlShareId = new URLSearchParams(window.location.search).get('share');
@@ -80,6 +91,155 @@ export default function Home() {
 
   const handlePropertyChange = (id: string, field: 'address' | 'label', value: string) => {
     setProperties(properties.map(p => p.id === id ? { ...p, [field]: value } : p));
+  };
+
+  const handleTabChange = (val: string) => {
+    const nextTab = val as 'single' | 'bulk';
+    
+    if (nextTab === 'bulk') {
+      // Sync from single to bulk
+      const currentAddresses = properties
+        .map(p => p.address)
+        .filter(Boolean)
+        .join('\n');
+      setBulkAddressText(currentAddresses);
+      setValidationResults([]);
+    } else {
+      // Sync from bulk to single
+      const lines = bulkAddressText
+        .split('\n')
+        .map(l => l.trim())
+        .filter(Boolean);
+      if (lines.length > 0) {
+        let newProps = lines.map((line) => {
+          const existing = properties.find(p => p.address.trim() === line);
+          return {
+            id: existing?.id || Math.random().toString(36).substr(2, 9),
+            address: line,
+            label: existing?.label || ''
+          };
+        });
+        while (newProps.length < 2) {
+          newProps.push({
+            id: Math.random().toString(36).substr(2, 9),
+            address: '',
+            label: ''
+          });
+        }
+        setProperties(newProps);
+      }
+    }
+    setActiveTab(nextTab);
+  };
+
+  const handleBulkValidateAndMap = async () => {
+    const rawLines = bulkAddressText
+      .split('\n')
+      .map(l => l.trim())
+      .filter(Boolean);
+
+    if (rawLines.length < 2) {
+      toast({
+        title: "Missing Information",
+        description: "Please enter at least 2 property addresses to route.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsValidating(true);
+    // Initialize results as pending
+    const initialResults = rawLines.map(addr => ({
+      address: addr,
+      status: 'pending' as const
+    }));
+    setValidationResults(initialResults);
+
+    try {
+      // Validate all addresses in parallel using geocodeAddress
+      const results = await Promise.all(
+        rawLines.map(async (address, index) => {
+          try {
+            const res = await geocodeAddress({ address });
+            // Update this specific index status to success
+            setValidationResults(prev => 
+              prev.map((item, idx) => 
+                idx === index 
+                  ? { ...item, status: 'success' as const, displayName: res.displayName } 
+                  : item
+              )
+            );
+            return { address, success: true, data: res };
+          } catch (err: any) {
+            const errMsg = err?.data?.details || err?.message || "Address not found";
+            // Update this specific index status to error
+            setValidationResults(prev => 
+              prev.map((item, idx) => 
+                idx === index 
+                  ? { ...item, status: 'error' as const, error: errMsg } 
+                  : item
+              )
+            );
+            return { address, success: false, error: errMsg };
+          }
+        })
+      );
+
+      const failures = results.filter(r => !r.success);
+      if (failures.length > 0) {
+        toast({
+          title: "Validation Failed",
+          description: `Could not validate ${failures.length} address${failures.length > 1 ? 'es' : ''}. Please fix the errors listed below.`,
+          variant: "destructive"
+        });
+        setIsValidating(false);
+        return;
+      }
+
+      // If all are valid, sync to properties state
+      const newProps = results.map((r, index) => {
+        const existing = properties.find(p => p.address.trim() === r.address);
+        return {
+          id: existing?.id || Math.random().toString(36).substr(2, 9),
+          address: r.data!.address,
+          label: existing?.label || `Property ${index + 1}`
+        };
+      });
+      setProperties(newProps);
+
+      // Now run optimization
+      optimizeRoute.mutate({
+        data: {
+          properties: newProps.map(p => ({ address: p.address, label: p.label || undefined })),
+          startAddress: startAddress.trim() || undefined
+        }
+      }, {
+        onSuccess: (data) => {
+          setRouteResult(data);
+          setShareId(null);
+          setShareUrl('');
+          toast({
+            title: "Success",
+            description: "All addresses validated and route optimized successfully!"
+          });
+        },
+        onError: (error) => {
+          const data = error.data as { error?: string; details?: string } | null;
+          const title = data?.error ?? "Optimization Failed";
+          const description = data?.details?.replace(/^Error:\s*/, "") ?? error.message ?? "There was an error optimizing the route.";
+          toast({ title, description, variant: "destructive" });
+        }
+      });
+
+    } catch (err: any) {
+      toast({
+        title: "Validation Error",
+        description: err.message || "An unexpected error occurred during validation.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsValidating(false);
+    }
   };
 
   const handleOptimize = () => {
@@ -115,6 +275,8 @@ export default function Home() {
     setShareId(null);
     setShareUrl('');
     setPhone('');
+    setBulkAddressText('');
+    setValidationResults([]);
     setProperties([{ id: '1', address: '', label: '' }, { id: '2', address: '', label: '' }]);
     // Clear share param from URL without reload
     window.history.replaceState({}, '', window.location.pathname);
@@ -260,54 +422,114 @@ export default function Home() {
                     <Badge variant="secondary">{properties.length} stops</Badge>
                   </div>
 
-                  <div className="space-y-3">
-                    {properties.map((prop, index) => (
-                      <Card key={prop.id} className="relative group overflow-hidden">
-                        <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-primary/20 group-hover:bg-primary transition-colors" />
-                        <CardContent className="p-4 pl-5">
-                          <div className="flex justify-between items-start mb-2">
-                            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                              Stop {index + 1}
-                            </Label>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 text-muted-foreground hover:text-destructive -mt-1 -mr-1"
-                              onClick={() => handleRemoveProperty(prop.id)}
-                              data-testid={`button-remove-prop-${prop.id}`}
-                            >
-                              <Trash2 size={14} />
-                            </Button>
-                          </div>
-                          <div className="space-y-3">
-                            <AddressAutocomplete
-                              value={prop.address}
-                              onChange={(v) => handlePropertyChange(prop.id, 'address', v)}
-                              placeholder="123 Main St, City, State"
-                              className="bg-background"
-                              data-testid={`input-address-${prop.id}`}
-                            />
-                            <input
-                              placeholder="Nickname (e.g. 3BR Colonial) - Optional"
-                              value={prop.label}
-                              onChange={(e) => handlePropertyChange(prop.id, 'label', e.target.value)}
-                              className="flex h-8 w-full rounded-md border border-input bg-background/50 px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                              data-testid={`input-label-${prop.id}`}
-                            />
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
+                  <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+                    <TabsList className="grid w-full grid-cols-2 mb-4">
+                      <TabsTrigger value="single" data-testid="tab-single">One by One</TabsTrigger>
+                      <TabsTrigger value="bulk" data-testid="tab-bulk">Bulk Paste</TabsTrigger>
+                    </TabsList>
 
-                  <Button
-                    variant="outline"
-                    className="w-full border-dashed"
-                    onClick={handleAddProperty}
-                    data-testid="button-add-property"
-                  >
-                    <Plus size={16} className="mr-2" /> Add Property
-                  </Button>
+                    <TabsContent value="single" className="space-y-4 outline-none">
+                      <div className="space-y-3">
+                        {properties.map((prop, index) => (
+                          <Card key={prop.id} className="relative group overflow-hidden">
+                            <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-primary/20 group-hover:bg-primary transition-colors" />
+                            <CardContent className="p-4 pl-5">
+                              <div className="flex justify-between items-start mb-2">
+                                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                  Stop {index + 1}
+                                </Label>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-muted-foreground hover:text-destructive -mt-1 -mr-1"
+                                  onClick={() => handleRemoveProperty(prop.id)}
+                                  data-testid={`button-remove-prop-${prop.id}`}
+                                >
+                                  <Trash2 size={14} />
+                                </Button>
+                              </div>
+                              <div className="space-y-3">
+                                <AddressAutocomplete
+                                  value={prop.address}
+                                  onChange={(v) => handlePropertyChange(prop.id, 'address', v)}
+                                  placeholder="123 Main St, City, State"
+                                  className="bg-background"
+                                  data-testid={`input-address-${prop.id}`}
+                                />
+                                <input
+                                  placeholder="Nickname (e.g. 3BR Colonial) - Optional"
+                                  value={prop.label}
+                                  onChange={(e) => handlePropertyChange(prop.id, 'label', e.target.value)}
+                                  className="flex h-8 w-full rounded-md border border-input bg-background/50 px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                  data-testid={`input-label-${prop.id}`}
+                                />
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+
+                      <Button
+                        variant="outline"
+                        type="button"
+                        className="w-full border-dashed"
+                        onClick={handleAddProperty}
+                        data-testid="button-add-property"
+                      >
+                        <Plus size={16} className="mr-2" /> Add Property
+                      </Button>
+                    </TabsContent>
+
+                    <TabsContent value="bulk" className="space-y-4 outline-none">
+                      <div className="space-y-2">
+                        <Label htmlFor="bulk-addresses" className="text-xs text-muted-foreground">
+                          Enter one address or MLS number per line. We will validate them and build your route.
+                        </Label>
+                        <Textarea
+                          id="bulk-addresses"
+                          rows={6}
+                          placeholder="e.g.&#10;100 Queen St W, Toronto, ON&#10;C8123457&#10;301 Front St W, Toronto, ON"
+                          value={bulkAddressText}
+                          onChange={(e) => setBulkAddressText(e.target.value)}
+                          className="bg-background font-mono text-sm leading-relaxed placeholder:font-sans"
+                          disabled={isValidating}
+                          data-testid="textarea-bulk-addresses"
+                        />
+                      </div>
+
+                      {validationResults.length > 0 && (
+                        <div className="border rounded-lg p-3 bg-muted/20 space-y-2 max-h-[220px] overflow-y-auto">
+                          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Validation Status
+                          </Label>
+                          <div className="space-y-2">
+                            {validationResults.map((result, idx) => (
+                              <div key={idx} className="text-xs flex items-start gap-2 min-w-0">
+                                {result.status === 'pending' && (
+                                  <Loader2 size={14} className="text-primary animate-spin shrink-0 mt-0.5" />
+                                )}
+                                {result.status === 'success' && (
+                                  <CheckCircle2 size={14} className="text-green-600 shrink-0 mt-0.5" />
+                                )}
+                                {result.status === 'error' && (
+                                  <AlertCircle size={14} className="text-destructive shrink-0 mt-0.5" />
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <div className="font-medium truncate text-foreground/80">{result.address}</div>
+                                  {result.status === 'success' && result.displayName && (
+                                    <div className="text-[10px] text-muted-foreground truncate">{result.displayName}</div>
+                                  )}
+                                  {result.status === 'error' && result.error && (
+                                    <div className="text-[10px] text-destructive truncate">{result.error}</div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </TabsContent>
+                  </Tabs>
                 </div>
               </div>
             </div>
@@ -462,18 +684,35 @@ export default function Home() {
 
         <div className="p-6 border-t bg-card/50 shrink-0">
           {!routeResult ? (
-            <Button
-              className="w-full h-12 text-base font-semibold"
-              onClick={handleOptimize}
-              disabled={optimizeRoute.isPending}
-              data-testid="button-optimize"
-            >
-              {optimizeRoute.isPending ? (
-                <><Spinner className="mr-2 size-4" /> Optimizing…</>
-              ) : (
-                <><Map className="mr-2" size={18} /> Optimize Route</>
-              )}
-            </Button>
+            activeTab === 'bulk' ? (
+              <Button
+                className="w-full h-12 text-base font-semibold"
+                onClick={handleBulkValidateAndMap}
+                disabled={isValidating || optimizeRoute.isPending}
+                data-testid="button-optimize-bulk"
+              >
+                {isValidating ? (
+                  <><Loader2 className="mr-2 size-4 animate-spin" /> Validating…</>
+                ) : optimizeRoute.isPending ? (
+                  <><Spinner className="mr-2 size-4" /> Optimizing…</>
+                ) : (
+                  <><Map className="mr-2" size={18} /> Validate & Optimize</>
+                )}
+              </Button>
+            ) : (
+              <Button
+                className="w-full h-12 text-base font-semibold"
+                onClick={handleOptimize}
+                disabled={optimizeRoute.isPending}
+                data-testid="button-optimize"
+              >
+                {optimizeRoute.isPending ? (
+                  <><Spinner className="mr-2 size-4" /> Optimizing…</>
+                ) : (
+                  <><Map className="mr-2" size={18} /> Optimize Route</>
+                )}
+              </Button>
+            )
           ) : (
             <Button
               variant="outline"

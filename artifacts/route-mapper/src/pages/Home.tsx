@@ -36,6 +36,13 @@ function addMinutesToTime(base: number, add: number): string {
   return `${displayH}:${String(m).padStart(2, '0')} ${period}`;
 }
 
+function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${Math.round(minutes)} min`;
+  const hours = Math.floor(minutes / 60);
+  const mins = Math.round(minutes % 60);
+  return `${hours}h ${mins}m`;
+}
+
 export default function Home() {
   const { toast } = useToast();
   const [startAddress, setStartAddress] = useState('');
@@ -69,13 +76,33 @@ export default function Home() {
   });
 
   useEffect(() => {
-    if (sharedRouteQuery.data) {
+    if (sharedRouteQuery.data && urlShareId) {
       setRouteResult(sharedRouteQuery.data as OptimizedRoute);
+      setShareId(urlShareId);
+      const host = window.location.host;
+      const proto = window.location.protocol;
+      setShareUrl(`${proto}//${host}/?share=${urlShareId}`);
     }
-  }, [sharedRouteQuery.data]);
+  }, [sharedRouteQuery.data, urlShareId]);
 
   const optimizeRoute = useOptimizeRoute();
   const shareRouteMutation = useShareRoute();
+
+  const autoGenerateShare = (route: OptimizedRoute) => {
+    setLoadingShare(true);
+    shareRouteMutation.mutate({
+      data: { route: route as any, startTime }
+    }, {
+      onSuccess: (data) => {
+        setShareId(data.shareId);
+        setShareUrl(data.shareUrl);
+        setLoadingShare(false);
+      },
+      onError: () => {
+        setLoadingShare(false);
+      }
+    });
+  };
 
   const handleAddProperty = () => {
     setProperties([...properties, { id: Math.random().toString(36).substr(2, 9), address: '', label: '' }]);
@@ -218,6 +245,7 @@ export default function Home() {
           setRouteResult(data);
           setShareId(null);
           setShareUrl('');
+          autoGenerateShare(data);
           toast({
             title: "Success",
             description: "All addresses validated and route optimized successfully!"
@@ -258,6 +286,7 @@ export default function Home() {
         setRouteResult(data);
         setShareId(null);
         setShareUrl('');
+        autoGenerateShare(data);
       },
       onError: (error) => {
         const data = error.data as { error?: string; details?: string } | null;
@@ -282,23 +311,7 @@ export default function Home() {
     window.history.replaceState({}, '', window.location.pathname);
   };
 
-  const handleShare = () => {
-    if (!routeResult) return;
-    setLoadingShare(true);
-    shareRouteMutation.mutate({
-      data: { route: routeResult as any, startTime }
-    }, {
-      onSuccess: (data) => {
-        setShareId(data.shareId);
-        setShareUrl(data.shareUrl);
-        setLoadingShare(false);
-      },
-      onError: () => {
-        toast({ title: "Share failed", description: "Could not generate share link.", variant: "destructive" });
-        setLoadingShare(false);
-      }
-    });
-  };
+
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(shareUrl);
@@ -317,25 +330,42 @@ export default function Home() {
   };
 
   const handleSendEmail = () => {
+    if (!routeResult) return;
     if (!email.trim() || !email.includes('@')) {
       toast({ title: "Invalid email", description: "Please enter a valid email address.", variant: "destructive" });
       return;
     }
-    const stopList = routeResult?.stops
-      .map((s, i) => `  ${i + 1}. ${s.label || s.displayName || s.address}  →  Arrive ${arrivalTimes[i]}, leave ~${departureTimes[i]}`)
-      .join('\n') ?? '';
-    const subject = encodeURIComponent('Your Property Showing Schedule');
+    const totalDuration = formatDuration(routeResult.totalDurationMinutes + routeResult.stops.length * SHOWING_DURATION_MIN);
+    const stopList = routeResult.stops
+      .map((s, i) => `📍 Stop ${i + 1}: ${s.label || s.displayName || s.address}\n   ⏰ Arrive: ${arrivalTimes[i]} | Leave: ~${departureTimes[i]}`)
+      .join('\n\n');
+    const subject = encodeURIComponent('Your Optimized Showing Route & Itinerary');
     const body = encodeURIComponent(
-      `Hi,\n\nHere is your optimised showing schedule:\n\n${stopList}\n\nView the full route on the map:\n${shareUrl}\n\nHave a great day!`
+      `Hi,\n\nHere is your optimized property showing schedule:\n\n⏱️ Total Duration: ${totalDuration}\n🚗 Total Distance: ${routeResult.totalDistanceKm.toFixed(1)} km\n\n${stopList}\n\n🗺️ View the interactive map and route:\n${shareUrl || window.location.href}\n\nHave a great day!`
     );
     window.open(`mailto:${encodeURIComponent(email.trim())}?subject=${subject}&body=${body}`, '_blank');
   };
 
-  const formatDuration = (minutes: number) => {
-    if (minutes < 60) return `${Math.round(minutes)} min`;
-    const hours = Math.floor(minutes / 60);
-    const mins = Math.round(minutes % 60);
-    return `${hours}h ${mins}m`;
+  const handleNativeShare = async () => {
+    if (!routeResult) return;
+    const currentUrl = shareUrl || window.location.href;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Optimized Showings Route Map',
+          text: `Check out my optimized showings route containing ${routeResult.stops.length} properties!`,
+          url: currentUrl,
+        });
+      } catch (err) {
+        // Ignored or cancelled share
+      }
+    } else {
+      await navigator.clipboard.writeText(currentUrl);
+      toast({
+        title: "Link Copied",
+        description: "Browser sharing is not supported. The route link has been copied to your clipboard instead!",
+      });
+    }
   };
 
   // Precompute arrival and departure times for each stop
@@ -611,71 +641,97 @@ export default function Home() {
 
                 {/* Share panel */}
                 <div className="border rounded-xl p-4 space-y-3 bg-muted/30">
-                  <div className="flex items-center gap-2 font-semibold text-sm">
-                    <Share2 size={15} className="text-primary" />
-                    Share This Route
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-semibold text-sm">
+                      <Share2 size={15} className="text-primary" />
+                      Share This Route
+                    </div>
+                    {loadingShare && (
+                      <Loader2 size={14} className="text-primary animate-spin" />
+                    )}
                   </div>
 
-                  {!shareUrl ? (
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={handleShare}
-                      disabled={loadingShare}
-                    >
-                      {loadingShare ? <><Spinner className="mr-2 size-3" />Generating link…</> : <><Share2 size={14} className="mr-2" />Generate Share Link</>}
-                    </Button>
-                  ) : (
-                    <div className="space-y-3">
-                      {/* Copy link row */}
-                      <div className="flex gap-2">
-                        <input
-                          readOnly
-                          value={shareUrl}
-                          className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-xs text-muted-foreground truncate"
-                        />
-                        <Button size="sm" variant="outline" onClick={handleCopy} className="shrink-0 w-9 p-0">
-                          {copied ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
-                        </Button>
-                      </div>
-
-                      {/* SMS row */}
-                      <div className="flex gap-2">
-                        <div className="relative flex-1">
-                          <MessageSquare size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                          <input
-                            type="tel"
-                            placeholder="Mobile number"
-                            value={phone}
-                            onChange={e => setPhone(e.target.value)}
-                            className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                          />
-                        </div>
-                        <Button size="sm" onClick={handleSendSms} className="shrink-0">
-                          Send SMS
-                        </Button>
-                      </div>
-
-                      {/* Email row */}
-                      <div className="flex gap-2">
-                        <div className="relative flex-1">
-                          <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                          <input
-                            type="email"
-                            placeholder="Email address"
-                            value={email}
-                            onChange={e => setEmail(e.target.value)}
-                            className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                          />
-                        </div>
-                        <Button size="sm" variant="outline" onClick={handleSendEmail} className="shrink-0">
-                          Send Email
-                        </Button>
-                      </div>
-
-                      <p className="text-xs text-muted-foreground">Opens your SMS or email app with the schedule pre-filled</p>
+                  <div className="space-y-3">
+                    {/* Copy link row */}
+                    <div className="flex gap-2">
+                      <input
+                        readOnly
+                        value={shareUrl || "Generating share link..."}
+                        className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-xs text-muted-foreground truncate"
+                        disabled={loadingShare}
+                      />
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={handleCopy} 
+                        className="shrink-0 w-9 p-0"
+                        disabled={!shareUrl || loadingShare}
+                        data-testid="button-copy-link"
+                      >
+                        {copied ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleNativeShare}
+                        className="shrink-0 w-9 p-0"
+                        disabled={!shareUrl || loadingShare}
+                        title="Share via other apps"
+                        data-testid="button-native-share"
+                      >
+                        <Share2 size={14} />
+                      </Button>
                     </div>
-                  )}
+
+                    {/* SMS row */}
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <MessageSquare size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                        <input
+                          type="tel"
+                          placeholder="Mobile number"
+                          value={phone}
+                          onChange={e => setPhone(e.target.value)}
+                          className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          disabled={!shareUrl || loadingShare}
+                        />
+                      </div>
+                      <Button 
+                        size="sm" 
+                        onClick={handleSendSms} 
+                        className="shrink-0"
+                        disabled={!shareUrl || loadingShare}
+                      >
+                        Send SMS
+                      </Button>
+                    </div>
+
+                    {/* Email row */}
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                        <input
+                          type="email"
+                          placeholder="Email address"
+                          value={email}
+                          onChange={e => setEmail(e.target.value)}
+                          className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          disabled={!shareUrl || loadingShare}
+                        />
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={handleSendEmail} 
+                        className="shrink-0"
+                        disabled={!shareUrl || loadingShare}
+                      >
+                        Send Email
+                      </Button>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground">Opens your SMS or email app with the schedule and map pre-filled</p>
+                  </div>
                 </div>
               </div>
             </div>

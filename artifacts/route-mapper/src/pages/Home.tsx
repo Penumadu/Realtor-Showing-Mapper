@@ -15,7 +15,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { collection, addDoc, getDocs, query, where, doc, deleteDoc, Timestamp } from 'firebase/firestore';
-import { auth, db, googleProvider, isConfigured } from '@/lib/firebase';
+import { getAuthInstance, getDbInstance, googleProvider, isConfigured } from '@/lib/firebase';
 
 const SHOWING_DURATION_MIN = 30;
 
@@ -74,7 +74,7 @@ export default function Home() {
   // Sync auth state
   useEffect(() => {
     if (!isConfigured) return;
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(getAuthInstance(), (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
         fetchSavedRoutes(currentUser.uid);
@@ -89,7 +89,7 @@ export default function Home() {
     setLoadingSavedRoutes(true);
     try {
       const q = query(
-        collection(db, "routes"),
+        collection(getDbInstance(), "routes"),
         where("userId", "==", uid)
       );
       const querySnapshot = await getDocs(q);
@@ -113,7 +113,7 @@ export default function Home() {
 
   const handleLogin = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
+      await signInWithPopup(getAuthInstance(), googleProvider);
       toast({
         title: "Logged In",
         description: "Successfully signed in with Google."
@@ -129,7 +129,7 @@ export default function Home() {
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await signOut(getAuthInstance());
       setSavedRoutes([]);
       toast({
         title: "Logged Out",
@@ -162,7 +162,7 @@ export default function Home() {
       if (!confirmLogin) return;
       
       try {
-        const result = await signInWithPopup(auth, googleProvider);
+        const result = await signInWithPopup(getAuthInstance(), googleProvider);
         currentUser = result.user;
         setUser(currentUser);
       } catch (err: any) {
@@ -204,7 +204,7 @@ export default function Home() {
     
     setIsSavingRoute(true);
     try {
-      await addDoc(collection(db, "routes"), {
+      await addDoc(collection(getDbInstance(), "routes"), {
         userId: currentUser.uid,
         title: name.trim() || defaultName,
         createdAt: Timestamp.now(),
@@ -235,7 +235,7 @@ export default function Home() {
     if (!window.confirm("Are you sure you want to delete this saved route?")) return;
     
     try {
-      await deleteDoc(doc(db, "routes", id));
+      await deleteDoc(doc(getDbInstance(), "routes", id));
       toast({
         title: "Route Deleted",
         description: "The route has been removed."
